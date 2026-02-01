@@ -1,12 +1,19 @@
 using BookStoreApp.API.Configurations;
 using BookStoreApp.API.Data;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connString = builder.Configuration.GetConnectionString("BookStoreAppDbConnection");
-builder.Services.AddDbContext<BookStoreDbContext>(options => options.UseSqlServer(connString));
+builder.Services.AddDbContext<BookStoreDbContext>(options => options.UseSqlServer(connString).ConfigureWarnings(warnings =>
+{
+    warnings.Ignore(RelationalEventId.PendingModelChangesWarning);
+}));
+
+builder.Services.AddIdentityCore<ApiUser>().AddRoles<IdentityRole>().AddEntityFrameworkStores<BookStoreDbContext>();
 
 builder.Services.AddAutoMapper(typeof(MapperConfig));
 
