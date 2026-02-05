@@ -1,15 +1,22 @@
 ﻿using AutoMapper;
 using BookStoreApp.API.Data;
 using BookStoreApp.API.DTOs.User;
+using BookStoreApp.API.Static;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace BookStoreApp.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController (ILogger<AuthController> logger, IMapper mapper, UserManager<ApiUser> userManager) : ControllerBase
+    [AllowAnonymous]
+    public class AuthController (ILogger<AuthController> logger, IMapper mapper, UserManager<ApiUser> userManager, IConfiguration configuration) : ControllerBase
     {
 
         [HttpPost]
@@ -49,7 +56,7 @@ namespace BookStoreApp.API.Controllers
 
         [HttpPost]
         [Route("login")]
-        public async Task<IActionResult> Login(LoginUserDto loginUser)
+        public async Task<ActionResult<AuthResponse>> Login(LoginUserDto loginUser)
         {
             logger.LogInformation($"Login attempt for {loginUser.Email}");
             try
@@ -59,10 +66,16 @@ namespace BookStoreApp.API.Controllers
 
                 if (user==null || passwordValid == false)
                 {
-                    return NotFound();
+                    return Unauthorized(loginUser);
                 }
-
-                return Accepted();
+                var tokenString = await GenerateToken(user);
+                var response = new AuthResponse
+                {
+                    Email = loginUser.Email,
+                    Token = tokenString,
+                    UserId = user.Id
+                };
+                return Ok(response);
             }
             catch (Exception ex)
             {
@@ -70,6 +83,35 @@ namespace BookStoreApp.API.Controllers
                 return Problem($"Something went wrong in the {nameof(Login)}", statusCode: 500);
             }
             return Ok();
+        }
+
+        private async Task<string> GenerateToken(ApiUser user)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["JwtSettings:Key"]));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var roles = await userManager.GetRolesAsync(user);
+            var roleClaims = roles.Select(q => new Claim(ClaimTypes.Role, q)).ToList();
+            var userClaims = await userManager.GetClaimsAsync(user);
+            var claims = new List<Claim>
+            {
+                new Claim(JwtRegisteredClaimNames.Sub,user.UserName),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email),
+                new Claim(CustomClaimTypes.Uid, user.Id),
+
+            }
+            .Union(userClaims)
+            .Union(roleClaims);
+
+            var token = new JwtSecurityToken(
+                issuer:configuration["JwtSettings:Issuer"],
+                audience: configuration["JwtSettings:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(Convert.ToInt32(configuration["JwtSettings:Duration"])),
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
         private bool IsRoleValid(string role)

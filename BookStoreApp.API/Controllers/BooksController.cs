@@ -3,6 +3,7 @@ using AutoMapper.QueryableExtensions;
 using BookStoreApp.API.Data;
 using BookStoreApp.API.DTOs.Book;
 using BookStoreApp.API.Static;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ namespace BookStoreApp.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class BooksController(BookStoreDbContext _context, ILogger<BooksController> logger, IMapper mapper) : ControllerBase
     {
         [HttpGet]
@@ -35,6 +37,7 @@ namespace BookStoreApp.API.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "Administrator")]
         public async Task<IActionResult> PutBook(int id, UpdateBookDto bookDto)
         {
             if(id!= bookDto.Id)
@@ -68,14 +71,17 @@ namespace BookStoreApp.API.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Book>> PostBook(Book book)
+        [Authorize(Roles = "Administrator")]
+        public async Task<ActionResult<Book>> PostBook(CreateBookDto bookDto)
         {
+            var book = mapper.Map<Book>(bookDto);
             _context.Books.Add(book);
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetBook), new { id = book.Id }, book);
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Administrator")]
         public async Task<IActionResult> DeleteBook(int id)
         {
             var book = await _context.Books.FindAsync(id);
